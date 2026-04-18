@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資産リバランスツール</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        main {
+            padding: 30px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+        }
+
+        .section h2::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            margin-right: 12px;
+        }
+
+        .asset-class {
+            background: white;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .asset-class label {
+            color: #555;
+            font-weight: 600;
+            grid-column: 1;
+        }
+
+        .asset-class input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+
+        .asset-class .current-amount,
+        .asset-class .current-percentage {
+            color: #667eea;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .totals {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #667eea;
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .total-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .total-item label {
+            color: #555;
+            font-weight: 600;
+        }
+
+        .total-item .value {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-wrapper {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .chart-wrapper h3 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        canvas {
+            max-height: 400px;
+        }
+
+        .recommendations {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #764ba2;
+            margin-top: 30px;
+        }
+
+        .recommendations h2 {
+            margin-bottom: 20px;
+        }
+
+        .recommendation-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .recommendation-item.buy {
+            border-left-color: #28a745;
+        }
+
+        .recommendation-item.sell {
+            border-left-color: #dc3545;
+        }
+
+        .rec-content {
+            flex: 1;
+        }
+
+        .rec-asset {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .rec-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .rec-amount {
+            font-size: 1.2em;
+            font-weight: 700;
+            text-align: right;
+            margin-left: 20px;
+        }
+
+        .rec-amount.buy {
+            color: #28a745;
+        }
+
+        .rec-amount.sell {
+            color: #dc3545;
+        }
+
+        .deviation-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .deviation-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+        }
+
+        .no-recommendations {
+            text-align: center;
+            color: #999;
+            padding: 30px;
+            font-size: 1.1em;
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            color: #1565c0;
+        }
+
+        .error-box {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            color: #c62828;
+        }
+
+        .success-box {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            color: #2e7d32;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .asset-class {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💰 資産リバランスツール</h1>
+            <p>現在の資産配分を目標に近づけるための提案をします</p>
+        </header>
+
+        <main>
+            <div class="layout">
+                <!-- 左側: 現在の資産入力 -->
+                <div class="section">
+                    <h2>現在の資産配分</h2>
+                    
+                    <div class="asset-class">
+                        <label>全世界株インデックスファンド</label>
+                        <input type="number" id="current-global-index" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-global-index-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>日経平均インデックスファンド</label>
+                        <input type="number" id="current-nikkei-index" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-nikkei-index-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>日本株</label>
+                        <input type="number" id="current-jp-stocks" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-jp-stocks-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>米国株</label>
+                        <input type="number" id="current-us-stocks" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-us-stocks-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>ビットコイン</label>
+                        <input type="number" id="current-bitcoin" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-bitcoin-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>イーサリアム</label>
+                        <input type="number" id="current-ethereum" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-ethereum-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>ソラナ</label>
+                        <input type="number" id="current-solana" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-solana-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>現金</label>
+                        <input type="number" id="current-cash" placeholder="金額を入力" min="0" step="1000">
+                        <span class="current-amount" id="current-cash-display">¥0</span>
+                    </div>
+
+                    <div class="totals">
+                        <div class="total-item">
+                            <label>総資産:</label>
+                            <span class="value" id="total-current">¥0</span>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-secondary" onclick="clearCurrent()">クリア</button>
+                    </div>
+                </div>
+
+                <!-- 右側: 目標配分設定 -->
+                <div class="section">
+                    <h2>目標資産配分</h2>
+                    
+                    <div class="asset-class">
+                        <label>全世界株インデックスファンド</label>
+                        <input type="number" id="target-global-index" value="32" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>日経平均インデックスファンド</label>
+                        <input type="number" id="target-nikkei-index" value="8" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>日本株</label>
+                        <input type="number" id="target-jp-stocks" value="32" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>米国株</label>
+                        <input type="number" id="target-us-stocks" value="8" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>ビットコイン</label>
+                        <input type="number" id="target-bitcoin" value="8" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>イーサリアム</label>
+                        <input type="number" id="target-ethereum" value="1" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>ソラナ</label>
+                        <input type="number" id="target-solana" value="1" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>現金</label>
+                        <input type="number" id="target-cash" value="10" min="0" max="100" step="1">
+                        <span class="current-percentage">%</span>
+                    </div>
+
+                    <div class="totals">
+                        <div class="total-item">
+                            <label>合計:</label>
+                            <span class="value" id="total-target">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="calculateRebalance()">リバランス提案を計算</button>
+                    </div>
+
+                    <div id="target-validation" class="info-box" style="display: none;"></div>
+
+                    <h2 style="margin-top: 30px; margin-bottom: 20px;">投資信託の基準価額</h2>
+                    
+                    <div class="asset-class">
+                        <label>全世界株インデックスファンド</label>
+                        <input type="number" id="price-global-index" placeholder="価格を入力" min="0" step="1">
+                        <span class="current-amount" id="price-global-index-display">¥0</span>
+                    </div>
+
+                    <div class="asset-class">
+                        <label>日経平均インデックスファンド</label>
+                        <input type="number" id="price-nikkei-index" placeholder="価格を入力" min="0" step="1">
+                        <span class="current-amount" id="price-nikkei-index-display">¥0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- チャート -->
+            <div class="charts-container" id="charts-container" style="display: none;">
+                <div class="chart-wrapper">
+                    <h3>📊 現在の配分</h3>
+                    <canvas id="current-chart"></canvas>
+                </div>
+                <div class="chart-wrapper">
+                    <h3>🎯 目標配分</h3>
+                    <canvas id="target-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- リバランス提案 -->
+            <div class="recommendations" id="recommendations-section" style="display: none;">
+                <h2>🔄 リバランス提案</h2>
+                <div id="recommendations-content"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const ASSET_CLASSES = [
+            { id: 'global-index', label: '全世界株インデックスファンド' },
+            { id: 'nikkei-index', label: '日経平均インデックスファンド' },
+            { id: 'jp-stocks', label: '日本株' },
+            { id: 'us-stocks', label: '米国株' },
+            { id: 'bitcoin', label: 'ビットコイン' },
+            { id: 'ethereum', label: 'イーサリアム' },
+            { id: 'solana', label: 'ソラナ' },
+            { id: 'cash', label: '現金' }
+        ];
+
+        const COLORS = [
+            '#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140'
+        ];
+
+        const PRESETS = {
+            balanced: { 'global-index': 30, 'nikkei-index': 15, 'jp-stocks': 10, 'us-stocks': 20, 'bitcoin': 10, 'ethereum': 8, 'solana': 2, 'cash': 5 },
+            growth: { 'global-index': 25, 'nikkei-index': 10, 'jp-stocks': 8, 'us-stocks': 25, 'bitcoin': 15, 'ethereum': 12, 'solana': 5, 'cash': 0 },
+            conservative: { 'global-index': 35, 'nikkei-index': 20, 'jp-stocks': 15, 'us-stocks': 15, 'bitcoin': 3, 'ethereum': 2, 'solana': 0, 'cash': 10 }
+        };
+
+        let currentChart = null;
+        let targetChart = null;
+
+        // 自動計算のための入力リスナー
+        document.querySelectorAll('input[type="number"]').forEach(input => {
+            input.addEventListener('input', updateDisplay);
+            input.addEventListener('change', validateTargets);
+        });
+
+        function getCurrencyFormat(value) {
+            return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(value);
+        }
+
+        function updateDisplay() {
+            // 現在の資産表示更新
+            let total = 0;
+            ASSET_CLASSES.forEach(asset => {
+                const input = document.getElementById(`current-${asset.id}`);
+                const value = parseFloat(input.value) || 0;
+                total += value;
+                const displayEl = document.getElementById(`current-${asset.id}-display`);
+                if (displayEl) displayEl.textContent = getCurrencyFormat(value);
+            });
+
+            document.getElementById('total-current').textContent = getCurrencyFormat(total);
+
+            // 目標配分の合計計算
+            let targetTotal = 0;
+            ASSET_CLASSES.forEach(asset => {
+                const input = document.getElementById(`target-${asset.id}`);
+                const value = parseFloat(input.value) || 0;
+                targetTotal += value;
+            });
+            document.getElementById('total-target').textContent = targetTotal.toFixed(1) + '%';
+
+            // 1口あたりの価格表示更新
+            ASSET_CLASSES.forEach(asset => {
+                const input = document.getElementById(`price-${asset.id}`);
+                if (input) {
+                    const value = parseFloat(input.value) || 0;
+                    const displayEl = document.getElementById(`price-${asset.id}-display`);
+                    if (displayEl) displayEl.textContent = getCurrencyFormat(value);
+                }
+            });
+
+            validateTargets();
+        }
+
+        function validateTargets() {
+            const validationEl = document.getElementById('target-validation');
+            let total = 0;
+            ASSET_CLASSES.forEach(asset => {
+                const input = document.getElementById(`target-${asset.id}`);
+                const value = parseFloat(input.value) || 0;
+                total += value;
+            });
+
+            if (Math.abs(total - 100) < 0.01) {
+                validationEl.style.display = 'none';
+            } else if (Math.abs(total - 100) < 1) {
+                validationEl.style.display = 'block';
+                validationEl.className = 'info-box';
+                validationEl.textContent = `⚠️ 目標配分の合計が ${total.toFixed(1)}% です (100% に調整してください)`;
+            } else {
+                validationEl.style.display = 'block';
+                validationEl.className = 'error-box';
+                validationEl.textContent = `❌ 目標配分の合計が ${total.toFixed(1)}% です (100% になるようにしてください)`;
+            }
+        }
+
+        function loadPreset(presetName) {
+            const preset = PRESETS[presetName];
+            ASSET_CLASSES.forEach(asset => {
+                document.getElementById(`target-${asset.id}`).value = preset[asset.id];
+            });
+            updateDisplay();
+        }
+
+        function clearCurrent() {
+            ASSET_CLASSES.forEach(asset => {
+                document.getElementById(`current-${asset.id}`).value = '';
+            });
+            updateDisplay();
+        }
+
+        function calculateRebalance() {
+            // 総資産の計算
+            let totalAssets = 0;
+            const currentAllocations = {};
+            
+            ASSET_CLASSES.forEach(asset => {
+                const value = parseFloat(document.getElementById(`current-${asset.id}`).value) || 0;
+                currentAllocations[asset.id] = value;
+                totalAssets += value;
+            });
+
+            // 目標配分の検証
+            let targetTotal = 0;
+            ASSET_CLASSES.forEach(asset => {
+                const value = parseFloat(document.getElementById(`target-${asset.id}`).value) || 0;
+                targetTotal += value;
+            });
+
+            if (Math.abs(targetTotal - 100) > 0.1) {
+                alert('目標配分の合計が100%ではありません。調整してください。');
+                return;
+            }
+
+            if (totalAssets <= 0) {
+                alert('総資産が0です。資産を入力してください。');
+                return;
+            }
+
+            // 現在の配分率計算
+            const currentPercentages = {};
+            ASSET_CLASSES.forEach(asset => {
+                currentPercentages[asset.id] = (currentAllocations[asset.id] / totalAssets) * 100;
+            });
+
+            // 目標配分取得
+            const targetPercentages = {};
+            ASSET_CLASSES.forEach(asset => {
+                targetPercentages[asset.id] = parseFloat(document.getElementById(`target-${asset.id}`).value) || 0;
+            });
+
+            // リバランス提案生成
+            const recommendations = [];
+            ASSET_CLASSES.forEach(asset => {
+                const current = currentAllocations[asset.id];
+                const currentPct = currentPercentages[asset.id];
+                const targetPct = targetPercentages[asset.id];
+                const targetAmount = (targetPct / 100) * totalAssets;
+                const difference = targetAmount - current;
+
+                const priceInput = document.getElementById(`price-${asset.id}`);
+                const price = priceInput ? parseFloat(priceInput.value) || 0 : 0;
+                const units = price > 0 ? (Math.abs(difference) * 10000) / price : 0;
+
+                recommendations.push({
+                    assetId: asset.id,
+                    label: asset.label,
+                    current: current,
+                    currentPct: currentPct,
+                    target: targetAmount,
+                    targetPct: targetPct,
+                    difference: difference,
+                    diffPct: targetPct - currentPct,
+                    price: price,
+                    units: units
+                });
+            });
+
+            // チャート描画
+            drawCharts(currentPercentages, targetPercentages);
+
+            // リバランス提案表示
+            displayRecommendations(recommendations);
+        }
+
+        function drawCharts(currentPercentages, targetPercentages) {
+            const labels = ASSET_CLASSES.map(a => a.label);
+            const currentData = ASSET_CLASSES.map(a => currentPercentages[a.id]);
+            const targetData = ASSET_CLASSES.map(a => targetPercentages[a.id]);
+
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed.y.toFixed(1) + '%';
+                            }
+                        }
+                    }
+                }
+            };
+
+            // 現在の配分チャート
+            const currentCtx = document.getElementById('current-chart');
+            if (currentChart) currentChart.destroy();
+            currentChart = new Chart(currentCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: currentData,
+                        backgroundColor: COLORS,
+                        borderColor: 'white',
+                        borderWidth: 2
+                    }]
+                },
+                options: chartOptions
+            });
+
+            // 目標配分チャート
+            const targetCtx = document.getElementById('target-chart');
+            if (targetChart) targetChart.destroy();
+            targetChart = new Chart(targetCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: targetData,
+                        backgroundColor: COLORS,
+                        borderColor: 'white',
+                        borderWidth: 2
+                    }]
+                },
+                options: chartOptions
+            });
+
+            document.getElementById('charts-container').style.display = 'grid';
+        }
+
+        function displayRecommendations(recommendations) {
+            const container = document.getElementById('recommendations-content');
+            const section = document.getElementById('recommendations-section');
+
+            let html = '';
+            let hasRecommendations = false;
+
+            recommendations.forEach(rec => {
+                if (Math.abs(rec.difference) > 100) { // 100円以上の差異がある場合のみ表示
+                    hasRecommendations = true;
+                    const isBuy = rec.difference > 0;
+                    const action = isBuy ? '買増し' : '売却';
+                    const actionClass = isBuy ? 'buy' : 'sell';
+                    const sign = isBuy ? '+' : '';
+
+                    const deviationPct = Math.abs(rec.diffPct);
+                    const deviationBar = (deviationPct / 50) * 100; // 最大50%の差異を想定
+
+                    let unitsInfo = '';
+                    if (rec.price > 0) {
+                        const actionText = isBuy ? '購入' : '売却';
+                        unitsInfo = `<br><span style="font-size: 0.85em; color: #666;">（${Math.round(rec.units)}口${actionText}）</span>`;
+                    }
+
+                    html += `
+                        <div class="recommendation-item ${actionClass}">
+                            <div class="rec-content">
+                                <div class="rec-asset">${rec.label}</div>
+                                <div class="rec-details">
+                                    現在: ${rec.currentPct.toFixed(1)}% (${getCurrencyFormat(rec.current)}) 
+                                    → 目標: ${rec.targetPct.toFixed(1)}% (${getCurrencyFormat(rec.target)})
+                                </div>
+                                <div class="deviation-bar">
+                                    <div class="deviation-fill" style="width: ${Math.min(deviationBar, 100)}%"></div>
+                                </div>
+                            </div>
+                            <div class="rec-amount ${actionClass}">
+                                ${getCurrencyFormat(Math.abs(rec.difference))}
+                                ${unitsInfo}
+                                <span style="font-size: 0.8em; display: block; margin-top: 5px;">(${isBuy ? '+' : '-'}${Math.abs(rec.diffPct).toFixed(1)}ポイント)</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            if (!hasRecommendations) {
+                html = '<div class="no-recommendations">✨ リバランスは不要です。現在の配分が目標に近い状態です。</div>';
+            }
+
+            container.innerHTML = html;
+            section.style.display = 'block';
+        }
+
+        // 初期表示
+        updateDisplay();
+    </script>
+</body>
+</html>
