@@ -322,6 +322,47 @@
             color: #2e7d32;
         }
 
+        .csv-import {
+            background: white;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .csv-import p {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 12px;
+        }
+
+        .csv-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .csv-controls input[type="file"] {
+            flex: 2;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #fff;
+        }
+
+        .csv-controls button {
+            flex: 1;
+        }
+
+        .csv-import-result ul {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+
+        .csv-import-result li {
+            margin-bottom: 6px;
+        }
+
         @media (max-width: 768px) {
             header h1 {
                 font-size: 1.8em;
@@ -335,8 +376,14 @@
                 grid-template-columns: 1fr;
             }
 
-            .button-group {
+            .button-group,
+            .csv-controls {
                 flex-direction: column;
+            }
+
+            .csv-controls input[type="file"],
+            .csv-controls button {
+                width: 100%;
             }
         }
     </style>
@@ -354,6 +401,16 @@
                 <div class="section">
                     <h2>現在の資産配分</h2>
                     
+
+                    <div class="csv-import">
+                        <p>証券会社・取引所のCSVから現在の資産配分を取り込みます。対応列名を自動探索し、分類できない行は警告に表示します。</p>
+                        <div class="csv-controls">
+                            <input type="file" id="csv-file" accept=".csv,text/csv">
+                            <button class="btn-secondary" onclick="handleCsvUpload()">CSV取込</button>
+                        </div>
+                        <div id="csv-import-result" class="csv-import-result" style="display: none;"></div>
+                    </div>
+
                     <div class="asset-class">
                         <label>全世界株インデックスファンド</label>
                         <input type="number" id="current-global-index" placeholder="金額を入力" min="0" step="1000">
@@ -417,7 +474,7 @@
                 <!-- 右側: 目標配分設定 -->
                 <div class="section">
                     <h2>目標資産配分</h2>
-                    
+
                     <div class="asset-class">
                         <label>全世界株インデックスファンド</label>
                         <input type="number" id="target-global-index" min="0" max="100" step="1">
@@ -480,7 +537,7 @@
                     <div id="target-validation" class="info-box" style="display: none;"></div>
 
                     <h2 style="margin-top: 30px; margin-bottom: 20px;">投資信託の基準価額</h2>
-                    
+
                     <div class="asset-class">
                         <label>全世界株インデックスファンド</label>
                         <input type="number" id="price-global-index" placeholder="価格を入力" min="0" step="1">
@@ -531,6 +588,10 @@
             '#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140'
         ];
 
+        const CSV_COLUMN_CANDIDATES = {
+            assetName: ['銘柄', '銘柄名', '商品名', '通貨', 'Symbol', 'Asset'],
+            amount: ['評価額', '時価評価額', '評価金額', '円換算額', '残高', 'Amount', 'Value']
+        };
         const PRESETS = {
             balanced: { 'global-index': 30, 'nikkei-index': 15, 'jp-stocks': 10, 'us-stocks': 20, 'bitcoin': 10, 'ethereum': 8, 'solana': 2, 'cash': 5 },
             growth: { 'global-index': 25, 'nikkei-index': 10, 'jp-stocks': 8, 'us-stocks': 25, 'bitcoin': 15, 'ethereum': 12, 'solana': 5, 'cash': 0 },
@@ -620,6 +681,194 @@
                 document.getElementById(`current-${asset.id}`).value = '';
             });
             updateDisplay();
+        }
+
+        function handleCsvUpload() {
+            const fileInput = document.getElementById('csv-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showCsvImportMessage('CSVファイルを選択してください。', 'error-box');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = event => {
+                try {
+                    importCsvAllocations(event.target.result);
+                } catch (error) {
+                    showCsvImportMessage(`CSVの取り込みに失敗しました: ${error.message}`, 'error-box');
+                }
+            };
+            reader.onerror = () => {
+                showCsvImportMessage('CSVファイルを読み込めませんでした。ファイルを確認してください。', 'error-box');
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function importCsvAllocations(csvText) {
+            const rows = parseCsv(csvText);
+            if (rows.length < 2) {
+                throw new Error('ヘッダー行とデータ行が必要です。');
+            }
+
+            const headers = rows[0].map(header => header.trim());
+            const assetColumnIndex = findColumnIndex(headers, CSV_COLUMN_CANDIDATES.assetName);
+            const amountColumnIndex = findColumnIndex(headers, CSV_COLUMN_CANDIDATES.amount);
+
+            if (assetColumnIndex === -1 || amountColumnIndex === -1) {
+                const missingColumns = [];
+                if (assetColumnIndex === -1) missingColumns.push('銘柄名・商品名・通貨名');
+                if (amountColumnIndex === -1) missingColumns.push('評価額・時価評価額・残高');
+                throw new Error(`${missingColumns.join('、')}の列が見つかりません。対応列名を確認してください。`);
+            }
+
+            const totalsByAsset = Object.fromEntries(ASSET_CLASSES.map(asset => [asset.id, 0]));
+            const unclassifiedRows = [];
+            let importedRows = 0;
+
+            rows.slice(1).forEach((row, index) => {
+                if (row.every(cell => cell.trim() === '')) return;
+
+                const assetName = (row[assetColumnIndex] || '').trim();
+                const amountText = row[amountColumnIndex] || '';
+                const amount = parseAmount(amountText);
+                const assetClassId = classifyAssetName(assetName);
+                const rowNumber = index + 2;
+
+                if (!assetName || !Number.isFinite(amount) || !assetClassId) {
+                    unclassifiedRows.push({
+                        rowNumber,
+                        assetName: assetName || '(空欄)',
+                        amountText: amountText || '(空欄)',
+                        reason: !assetName ? '銘柄名が空欄' : (!Number.isFinite(amount) ? '評価額を数値化できない' : '分類ルールに一致しない')
+                    });
+                    return;
+                }
+
+                totalsByAsset[assetClassId] += amount;
+                importedRows += 1;
+            });
+
+            ASSET_CLASSES.forEach(asset => {
+                document.getElementById(`current-${asset.id}`).value = totalsByAsset[asset.id] || '';
+            });
+
+            updateDisplay();
+            showCsvImportResult(importedRows, totalsByAsset, unclassifiedRows);
+        }
+
+        function parseCsv(csvText) {
+            const rows = [];
+            let row = [];
+            let cell = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < csvText.length; i++) {
+                const char = csvText[i];
+                const nextChar = csvText[i + 1];
+
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        cell += '"';
+                        i += 1;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    row.push(cell);
+                    cell = '';
+                } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                    row.push(cell);
+                    rows.push(row);
+                    row = [];
+                    cell = '';
+                    if (char === '\r' && nextChar === '\n') i += 1;
+                } else {
+                    cell += char;
+                }
+            }
+
+            if (cell !== '' || row.length > 0) {
+                row.push(cell);
+                rows.push(row);
+            }
+
+            return rows.filter((parsedRow, index) => index === 0 || parsedRow.some(cellValue => cellValue.trim() !== ''));
+        }
+
+        function findColumnIndex(headers, candidates) {
+            const normalizedCandidates = candidates.map(normalizeColumnName);
+            return headers
+                .map(normalizeColumnName)
+                .findIndex(header => normalizedCandidates.includes(header));
+        }
+
+        function normalizeColumnName(value) {
+            return String(value || '').trim().toLowerCase();
+        }
+
+        function parseAmount(value) {
+            const normalized = String(value || '')
+                .trim()
+                .replace(/[￥¥円,，\s]/g, '')
+                .replace(/^\((.*)\)$/, '-$1');
+            const amount = Number(normalized);
+            return Number.isFinite(amount) ? amount : NaN;
+        }
+
+        function classifyAssetName(assetName) {
+            const normalized = String(assetName || '').trim();
+            const upper = normalized.toUpperCase();
+
+            if (/オルカン|全世界|ACWI/i.test(normalized)) return 'global-index';
+            if (/日経|NIKKEI|225/i.test(normalized)) return 'nikkei-index';
+            if (/日本株|国内株/i.test(normalized)) return 'jp-stocks';
+            if (/米国株|S&P\s*500|S＆P\s*500|NASDAQ/i.test(normalized) || /(^|[^A-Z])US([^A-Z]|$)/i.test(upper)) return 'us-stocks';
+            if (/BTC|BITCOIN|ビットコイン/i.test(normalized)) return 'bitcoin';
+            if (/ETH|ETHEREUM|イーサリアム/i.test(normalized)) return 'ethereum';
+            if (/SOL|SOLANA|ソラナ/i.test(normalized)) return 'solana';
+            if (/現金|JPY|日本円/i.test(normalized)) return 'cash';
+            return null;
+        }
+
+        function showCsvImportResult(importedRows, totalsByAsset, unclassifiedRows) {
+            const importedAssets = ASSET_CLASSES
+                .filter(asset => totalsByAsset[asset.id] !== 0)
+                .map(asset => `${asset.label}: ${getCurrencyFormat(totalsByAsset[asset.id])}`);
+
+            let html = `<strong>CSV取込完了:</strong> ${importedRows}行を取り込みました。`;
+            if (importedAssets.length > 0) {
+                html += `<ul>${importedAssets.map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>`;
+            }
+
+            if (unclassifiedRows.length > 0) {
+                html += `<p style="margin-top: 10px;"><strong>⚠️ 未分類行:</strong> ${unclassifiedRows.length}行あります。該当する資産クラスへ手入力で補正してください。</p>`;
+                html += `<ul>${unclassifiedRows.map(row => `<li>${row.rowNumber}行目: ${escapeHtml(row.assetName)} / ${escapeHtml(row.amountText)}（${escapeHtml(row.reason)}）</li>`).join('')}</ul>`;
+                showCsvImportMessage(html, 'error-box', true);
+            } else {
+                showCsvImportMessage(html, 'success-box', true);
+            }
+        }
+
+        function showCsvImportMessage(message, className, isHtml = false) {
+            const resultEl = document.getElementById('csv-import-result');
+            resultEl.style.display = 'block';
+            resultEl.className = `csv-import-result ${className}`;
+            if (isHtml) {
+                resultEl.innerHTML = message;
+            } else {
+                resultEl.textContent = message;
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         function calculateRebalance() {
